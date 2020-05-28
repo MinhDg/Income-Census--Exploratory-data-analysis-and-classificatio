@@ -1,0 +1,1336 @@
+---
+title: "Income Census- Exploratory data analysis and classification"
+author: "Minh Trung DANG"
+date: "28/05/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Predicting if income exceeds $50,000 per year based on 1994 US Census Data with Simple Classification Techniques
+
+Data Set Information:
+
+Extraction was done by Barry Becker from the 1994 Census database. A set of reasonably clean records was extracted using the following conditions: ((AAGE>16) && (AGI>100) && (AFNLWGT>1)&& (HRSWK>0))
+download the dataset from: "https://www.kaggle.com/uciml/incomecensus-census-income"
+
+
+*** Response variable
+A. income: Categorical variable that contains yearly income of the respondent ("<=$50K" or ">50K").
+
+*** Independent variables
+B. age: Numerical variable that contains the age of the respondent.
+
+C. workclass : Categorical variable that contains the type of employer of the respondent
+
+D. fnlwgt: Numerical variable that contains the number of respondents that each row of the data set represents.
+
+E. education: Categorical variable that represents the level of education of the respondent (Doctorate, Prof-school, Masters, Bachelors, Assoc-acdm, Assoc-voc, Some-college, HS-grad, 12th, 11th, 10th, 9th, 7th-8th, 5th-6th, 1st-4th, Preschool)
+
+F. education.num: Numerical variable that represents the *education* variable.
+
+G. marital.status: The marital status of the respondent
+
+H. occupation: Categorical variable that represents the type of employment of the respondent (?, Adm-clerical, Armed-Forces, Craft-repair, Exec-managerial, Farming-fishing, Handlers-cleaners, Machine-op-inspct, Other-service, Priv-house-serv, Prof-specialty, Protective-serv,  Sales,  Tech-support, Transport-moving). 
+
+I. relationship: Categorical variable that represents the position in the family of the respondent (Husband, Not-in-family, Other-relative, Own-child, Unmarried, Wife).
+
+J. race: Categorical variable that represents the race of the respondent (Amer-Indian-Eskimo, Asian-Pac-Islander, Black,Other, White).
+
+K. sex: Categorical variable that represent the sex of the respondent (Female, Male).
+
+L. capital.gain: Numerical variable that represents the income gained by the respondent from sources other than salary/wages.
+
+M. capital.loss: Numerical variable that represents the income lost by the respondent from sources other than salary/wages.
+
+N. hours.per.week: Numerical variable that represents the hours worked per week by the respondent.
+
+O. native.country: Categorical variable that represents the native country of the respondent. 
+
+
+1. Importing data
+
+We will read in our data using the read_csv() function, from the tidyverse package readr, instead of read.csv().
+
+```{r}
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(DataExplorer)
+library(pander)
+```
+
+```{r}
+incomecensus <- read_csv("adultincome.csv")
+```
+
+2. Inspecting the data frame
+
+First look at the data
+
+```{r}
+str(incomecensus)
+```
+
+```{r}
+incomecensus <- incomecensus %>% 
+  select(-c(fnlwgt))
+```
+
+```{r}
+head(incomecensus)
+```
+
+Dealing with rows containing  "?"
+
+We can see that there are some rows with "?".
+
+For example
+
+```{r}
+incomecensus %>% 
+  group_by(workclass) %>% 
+  summarise(count = n())
+```
+
+We will check if there are any other columns containings "?"
+
+First, check for the records with any "?"
+
+```{r}
+missing_count <- purrr::map_df(incomecensus, ~ stringr::str_detect(., pattern = "\\?")) %>%
+  rowSums() %>%
+  tbl_df() %>%
+  filter(value > 0) %>%
+  summarize(missing_count = n()) 
+
+missing_count
+```
+
+In total, there are 2399 rows containing "?"
+
+```{r}
+count.NA.per.col <- plyr::ldply(incomecensus, function(c) sum(c == "?"))
+count.NA.per.col %>% 
+  pander()
+```  
+
+There are 3 columns that contain "?" as NA: workclass, occupation, and native.country
+
+We will remove all of these records.
+
+```{r}
+incomecensus <- incomecensus %>% 
+  filter(!workclass=="?", !occupation=="?", !native.country=="?")
+```
+
+The resulting data contains 30162 rows.
+
+Assigning correct R data types to each column
+
+Converting character to factor.m
+
+```{r}
+incomecensus <- incomecensus %>%
+  mutate_if(is.character,as.factor)
+
+str(incomecensus)
+```
+
+3. Detecting the inconsistency of the data
+
+3.1. Missing Values
+
+```{r}
+plot_missing(incomecensus)
+```
+
+We will remove the fnlwgt column
+
+3.2. Checking duplicate records
+
+```{r duplicates}
+    # to check for duplicate records
+incomecensus %>%
+  summarize(record_count = n(),
+            distinct_records = n_distinct(.))
+```
+
+The function distinct() [dplyr package] can be used to keep only unique/distinct rows from a data frame. 
+
+If there are duplicate rows, only the first row is preserved. It’s an efficient version of the R base function unique().
+
+```{r}
+incomecensus <- incomecensus %>% 
+  distinct()
+```
+
+The resulting data frame contain 26904 records.
+
+
+3.3. Checking the consistence of the data
+
+A.  Age and education
+
+
+```{r}
+incomecensus %>%
+  ggplot(aes(age, education)) + 
+  geom_point(alpha = 0.3, col = "#00AFBB") + 
+  geom_point(aes(col = (age<= 20 & education == 'Masters')), 
+             alpha = 1, 
+             size = 3) + 
+  scale_colour_manual(values = setNames(c('blue','grey'),
+                                        c(T, F))) +
+  theme(legend.position="bottom") + 
+  scale_x_continuous(breaks = seq(0,100,10))+ 
+  xlab("Age") + 
+  ylab("Education Level") +
+  ggtitle("Age vs Education Level")
+```
+There are a few data points (in blue) are outlier datapoints.
+ 
+It is highly unlikely that the people with age of 20 years and less can complete Masters degree. In reality, it might be possible.
+
+We can take these data points out. 
+
+```{r}
+incomecensus <- incomecensus %>%
+  filter(!(age <= 20 & education == 'Masters'))
+```
+
+B. sex and relationship status
+
+```{r}
+table(incomecensus$sex, incomecensus$relationship)
+```
+
+There is one record where Husband is female
+
+There is also one record where wife is female. 
+
+In 1994, this situation was not possible in the US
+
+Where are these records ?
+
+```{r}
+incomecensus %>%
+  filter((sex == 'Male' & relationship == 'Wife')  | (sex == 'Female' & relationship == 'Husband'))
+```
+
+These points can be removed using the code below.
+
+```{r}
+incomecensus <- incomecensus %>%
+  filter(!((sex == 'Male' & relationship == 'Wife') | (sex == 'Female' & relationship == 'Husband')))
+```
+
+C. Relationship and marital status
+
+Marital Status: The marital status classification identifies five major categories: never married, married, widowed, and divorced.
+
+```{r}
+table(incomecensus$relationship, incomecensus$marital.status) 
+```
+
+The group “other married, spouse absent” includes married people living apart because either the husband or wife was employed and
+living at a considerable distance from home, was serving away from home in the Armed Forces, had moved to another area, or had a different place of residence for any other reason except separation as defined above.
+(https://www.unmarried.org/government-terminology/)
+
+
+```{r}
+incomecensus %>%
+  filter(marital.status == 'Married-spouse-absent' & relationship == 'Unmarried') %>% 
+  summarise(count = n())
+```
+
+There are 120 rows where people are 'Married-spouse-absent' and 'Unmarried' at the same time.
+
+Thers records will be removed.
+
+```{r}
+incomecensus <- incomecensus %>%
+  filter(!(marital.status == 'Married-spouse-absent' & relationship == 'Unmarried'))
+```
+
+
+D. age and weekly working hour
+
+```{r, fig.width= 6, fig.height= 6}
+incomecensus %>%
+  ggplot(aes(age, hours.per.week)) + 
+  geom_point(size = 2, shape = 23, color = "blue") + 
+  theme(legend.position="bottom") + 
+  scale_x_continuous(breaks = seq(0,100,10))+ 
+  scale_y_continuous(breaks = seq(0,100,10))+ 
+  xlab("Age") + 
+  ylab("Weekly working hours") +
+  ggtitle("Age vs Weekly working hours ")
+```
+Some people aged older than 70 and work more than 80 hours a week.
+
+Even for people with 90 years of age, there are records of 100 hours per week.
+
+To lighlight these data point
+
+
+```{r, fig.width= 6, fig.height= 6}
+incomecensus %>%
+  ggplot(aes(age, hours.per.week)) + 
+  geom_point(alpha = 0.3, col = "#00AFBB") +
+  geom_point(aes(col = (age >= 70 & hours.per.week >= 40)), 
+             alpha = 1, 
+             size = 3) + 
+  scale_colour_manual(values = setNames(c('red','grey'),
+                                        c(T, F))) +
+  theme(legend.position="bottom") + 
+  scale_x_continuous(breaks = seq(0,100,10))+ 
+  scale_y_continuous(breaks = seq(0,100,10))+ 
+  xlab("Age") + 
+  ylab("Weekly working hours") +
+  ggtitle("Age vs Weekly working hours ")
+```
+
+```{r}
+incomecensus %>%
+  filter(age >= 70 & hours.per.week > 50) %>% 
+  summarise(counts =n())
+```
+
+Data points with age more than and equal to 70 years and working hours greater than 50 hours can be removed.
+
+```{r}
+incomecensus <- incomecensus %>%
+   filter(!(age >= 70 & hours.per.week > 50))
+```
+
+
+E. capital loss and capital gain
+
+There are many points with 99999 as the Capital which seems suspicious and hence, should be eliminated from the analysis.
+
+```{r}
+incomecensus %>%
+  group_by(capital.gain) %>% 
+  summarise(counts =n()) %>% 
+  arrange(desc(capital.gain)) %>% 
+  head(10)
+```
+
+We can remove all the records where the capital gain is equal to 99999.
+
+```{r}
+incomecensus <- incomecensus %>%
+   filter(!(capital.gain == 99999))
+```
+
+
+```{r}
+incomecensus %>%
+  group_by(capital.loss) %>% 
+  summarise(counts =n()) %>% 
+  arrange(desc(capital.loss)) %>% 
+  head(10)
+```
+
+F. Work class and occupation
+
+```{r}
+table(incomecensus$occupation, incomecensus$workclass)
+```
+
+We might remove the two levels: without-pay 
+
+We also might regroup these levels into 3 categoris : public, private, self-employeed 
+
+
+3. Exploratory data analysis (EDA)
+
+***A. income***
+
+Categorical variable that contains yearly income of the respondent ("<=$50K" or ">50K").
+
+```{r}
+incomecensus %>% 
+  group_by(income) %>% 
+  summarise(count = n())
+```
+
+```{r}
+income_prop <- incomecensus %>% 
+  group_by(income) %>% 
+  summarise(count = n()) %>% 
+  ungroup()%>% 
+  arrange(desc(income)) %>%
+  mutate(percentage = round(count/sum(count),4)*100,
+         lab.pos = cumsum(percentage)-0.5*percentage)
+
+ggplot(data = income_prop, 
+       aes(x = "", 
+           y = percentage, 
+           fill = income))+
+  geom_bar(stat = "identity")+
+  coord_polar("y") +
+  geom_text(aes(y = lab.pos, 
+                label = paste(percentage,"%", sep = "")), col = "blue", size = 5) +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  theme_void() +
+  theme(legend.title = element_text(color = "black", size = 14),
+        legend.text = element_text(color = "black", size = 14))
+
+```
+
+The summary of the data shows that  75 % of the observations have an income less than or equal to 50k dollars. 
+
+Specifically, 22654 persons have an income <=50k dollars, while  7508 people earn more than 50k. 
+
+***B. Age***
+```{r}
+incomecensus %>% ggplot(aes(age)) + 
+  geom_histogram(fill= "lightblue",
+                 color = 'blue',
+                 binwidth = 5) +   
+  labs(title= "Age Distribution") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+summary(incomecensus$age)
+```
+
+```{r}
+incomecensus %>% ggplot(aes(age)) + 
+  geom_histogram(aes(fill=income),
+                 color = 'grey',
+                 binwidth = 1) +   
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  labs(title= "Age Distribution for Income")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r age, echo=TRUE, eval=TRUE}
+incomecensus %>% 
+  ggplot(aes(age, 
+             fill= income)) +
+  geom_density(alpha= 0.7, color = 'blue') +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  labs(x = "Age", y = "Density", title = "Density graph of age distribution")
+```
+
+Older people  tends to earn more.
+
+On the other hand, majority of the people with an age around 25 years earns less than 50k per annum.
+
+***C. workclass ***
+```{r}
+library(ggthemes)
+library(hrbrthemes)
+```
+
+```{r}
+incomecensus %>%
+  group_by(workclass) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(desc(counts)) %>% 
+  ggplot(aes(x= reorder(workclass, -counts),
+             y  = counts,
+             fill = Percentage)) +
+  geom_bar(stat = "identity",
+           width = 0.6) +
+  scale_fill_gradient(low="skyblue1", high="royalblue4")+
+  geom_text(aes(label = paste0(round(counts,1), "\n",Percentage,"%")), 
+            vjust = -0.1, 
+            color = "darkblue", 
+            size = 4) +
+  scale_y_continuous(limits = c(0,25000)) +
+  theme_minimal() +
+  labs(x = "Work class",
+       y = "Frequency",
+       caption = "Income census US 1994") 
+```
+
+Almost three-quarters of sample work in the private sector. 
+
+In this data, there are dictinction between Local-gov, State-gov, and Federal-gov.
+
+We might group these three category if there is no difference in income level between them.
+
+```{r}
+library(ggpubr)
+library(scales)
+```
+
+```{r, fig.height= 7.5, fig.width= 20}
+p1 <- incomecensus %>%
+  group_by(workclass) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(desc(counts)) %>% 
+  ggplot(aes(x= reorder(workclass, counts),
+             y  = counts)) +
+  geom_bar(stat = "identity",
+           width = 0.6,
+           fill = "steelblue") +
+  geom_text(aes(label = paste0(round(counts,1),"\n",Percentage,"%")), 
+            vjust = 0.5, 
+            hjust = -0.5,
+            color = "darkblue", 
+            size = 4) +
+  scale_y_continuous(limits = c(0,20000)) +
+  theme_minimal() +
+  labs(x = "Work class",y = "Frequency") + 
+  coord_flip()
+
+p2 <- incomecensus %>% 
+  group_by(workclass, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(workclass, n), 
+             y = pct/100, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name= "Percentage", 
+                     labels = percent) +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.text.y=element_blank()) + 
+  coord_flip()
+
+ggarrange(p1, p2, nrow = 1)
+```
+
+````{r}
+income_gov <- incomecensus %>% 
+  filter(workclass %in% c("Local-gov", "State-gov", "Federal-gov")) %>% 
+  group_by(workclass, income) %>%
+  summarise(count = n()) %>% 
+  mutate(pct = count/sum(count)) %>%
+  arrange(desc(income), pct)
+
+income_gov <-  income_gov %>% transmute(income, percent = count*100/sum(count))
+income_gov 
+```  
+
+```{r, fig.height= 5, fig.width= 5}
+incomecensus %>% 
+  filter(workclass %in% c("Local-gov", "State-gov", "Federal-gov")) %>% 
+  group_by(workclass, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(workclass, n), 
+             y = pct, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+```
+
+There is a slight difference between Local-gov and Stave-gov. 
+
+Working for the federal government can have a greater chance of getting an income higher than 50K.
+
+```{r, fig.height= 5, fig.width= 5}
+incomecensus %>% 
+  filter(workclass %in% c("Self-emp-not-inc", "Self-emp-inc", "Without-pay")) %>% 
+  group_by(workclass, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(workclass, n), 
+             y = pct, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+```
+
+***education***
+```{r}
+incomecensus %>% 
+  group_by(education) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  pander()
+```
+
+```{r}
+incomecensus %>% 
+  group_by(education.num) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  pander()
+```
+We can see that these two columns are identical. 
+
+The column education.num is simply converted from the column education.
+
+If we keep the column education which is factor type, we might regroup some categories in this column. 
+
+If we keep the column education.num which is numerical type,, we can keep the column as it is (numeric).
+
+```{r}
+eudcation_df <- incomecensus %>%
+  group_by(education.num) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(education.num)
+
+eudcation_df %>% 
+  pander()
+```
+
+```{r,, fig.height= 5, fig.width= 12}
+ggplot(data = eudcation_df ,
+           aes(x= education.num,
+               y  = counts,
+               fill = Percentage)) +
+  geom_bar(stat = "identity",
+           width = 0.6) +
+  scale_x_continuous(breaks = c(0:16)) +
+  scale_fill_gradient(low="skyblue1", high="royalblue4")+
+  geom_text(aes(label = paste0(round(counts,1), "\n","(",Percentage,"%)")), 
+            vjust = -0.1, 
+            color = "darkblue", 
+            size = 4) +
+  scale_y_continuous(limits = c(0,12000)) +
+  theme_minimal() +
+  labs(x = "Years of education",
+       y = "Frequency",
+       caption = "Income census US 1994") +
+  ggtitle("Distribution of years of education") +
+    theme(plot.title = element_text(hjust = 0.5), 
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "right", 
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(colour="black", size = 12))
+```
+
+About 50% of respondents have 9-10 years of education.
+
+About 17% of people in the sample hold bachelor degree (13 years of education). 
+
+
+```{r, fig.height= 5, fig.width= 7.5}
+education.pct <- incomecensus %>%
+  group_by(education.num, income) %>%
+  summarize(count = n()) %>%
+  mutate(pct = count/sum(count)) %>%
+  arrange(desc(income), pct)
+
+ggplot(education.pct, 
+       aes(education.num, pct, fill = income)) + 
+  geom_bar(stat="identity", position = "fill") + 
+  geom_hline(yintercept = 0.2489, col = "blue") +
+  scale_x_continuous(breaks = c(0:16)) +
+  scale_y_continuous(labels=scales::percent) + 
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) + 
+  ggtitle("Income by years of education") + 
+  xlab("Education (years)") + 
+  ylab("Percentage") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "right", 
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(colour="black", size = 12)) 
+```
+Higher years of education led to a higher chance of having >50K.
+
+***marital status***
+```{r}
+incomecensus %>% 
+  group_by(marital.status) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts))
+```
+we can put all the married people in the same group
+
+This column have 7 labels, three of them are:
+
+- Married-AF-spouse: Married armed forces spouse  
+
+- Married-civ-spouse: Married civilian spouse  
+
+- Married-spouse-absent
+
+These levels can be grouped into the group "married".  
+
+Replace  "Married-AF-spouse", "Married-civ-spouse", and "Married-spouse-absent" by "Married"
+
+```{r}
+pat = c("Married-AF-spouse|Married-civ-spouse|Married-spouse-absent")
+incomecensus <- incomecensus %>% 
+  mutate(marital_status = stringr::str_replace_all(marital.status, pat, "Married"))
+```
+
+```{r}
+incomecensus <- incomecensus %>% 
+  select(-marital.status)
+```
+
+```{r}
+marital_df <- incomecensus %>%
+  group_by(marital_status) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),1)) %>% 
+  arrange(desc(counts))
+
+marital_df %>% 
+  pander()
+```
+
+The proportion of married people that have an income higher than 50K is highest. 
+
+```{r, fig.height= 4, fig.width= 12}
+p3 <- incomecensus %>%
+  group_by(marital_status) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(desc(counts)) %>% 
+  ggplot(aes(x= reorder(marital_status, counts),
+             y  = counts)) +
+  geom_bar(stat = "identity",
+           width = 0.6,
+           fill = "steelblue") +
+  geom_text(aes(label = paste0(round(counts,1),"\n","(",Percentage,"%)")), 
+            vjust = 0.4, 
+            hjust = -0.5,
+            color = "darkblue", 
+            size = 4) +
+  scale_y_continuous(limits = c(0,20000)) +
+  theme_minimal() +
+  labs(x = "Marital status",y = "Frequency") + 
+  coord_flip()
+
+p4 <- incomecensus %>% 
+  group_by(marital_status, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(marital_status, n), 
+             y = pct/100, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "Percentage", 
+                     labels = scales::percent) +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.text.y=element_blank()) + 
+  coord_flip()
+
+ggarrange(p3, p4, nrow = 1)
+```
+
+
+***occupation***
+
+```{r, fig.height= 7.5, fig.width= 10}
+Category_df <- incomecensus %>%
+  group_by(occupation) %>% 
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(counts)
+
+ggplot(data = Category_df,
+           aes(x= reorder(occupation, -counts),
+               y  = counts,
+               fill = Percentage)) +
+  geom_bar(stat = "identity",
+           width = 0.7) +
+  geom_text(aes(label = paste0(counts,", ", Percentage,"%")), 
+            vjust = 0.2, 
+            hjust = -0.1,
+            color = "darkblue", 
+            size = 4) +
+  scale_y_continuous(limits = c(0,5000)) +
+  scale_fill_distiller(palette = "Spectral") +
+  theme_minimal() +
+  labs(x = "Category",
+       y = "Frequency",
+       caption = "Income census US 1994") +
+  coord_flip()
+```
+
+```{r, fig.height= 6, fig.width= 7.5}
+occupation.pct <- incomecensus %>%
+  group_by(occupation, income) %>%
+  summarize(count = n()) %>%
+  mutate(pct = count/sum(count)) %>%
+  arrange(desc(income), pct)
+
+occupation.pct$occupation <- factor(occupation.pct$occupation,
+                                    levels = occupation.pct$occupation[1:(nrow(occupation.pct)/2)])
+
+ggplot(occupation.pct, aes(reorder(occupation,-pct), pct, fill = income)) + 
+  geom_bar(stat="identity", position = "fill") + 
+  geom_hline(yintercept = 0.2489, col = "blue") +
+  ggtitle("Income by occupation") + 
+  xlab("Occupation") + 
+  ylab("Percentage") + 
+  scale_y_continuous(labels=scales::percent) + 
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.title = element_text(size = 12), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "bottom", 
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(colour="black", size = 12)) + 
+  coord_flip()
+```
+
+About 25% of the sample has an income of more than 50K. 
+
+There are five categories of jobs that have a higher percentage: Protective service, tech-support, Sales, Exec-managerial, and Prof-speciality.
+
+Question: Are these people work in the private sector?
+
+```{r}
+incomecensus %>% 
+  filter(occupation %in% c("Protective-serv", "Tech-support", "Sales", "Exec-managerial", "Prof-specialty")) %>% 
+  group_by(workclass) %>% 
+  summarise(freq =  n()) %>% 
+  mutate(percentage = round(freq*100/sum(freq),1)) %>%
+  arrange(desc(percentage)) %>% 
+  pander()
+```
+
+About two-third work in the private sector.
+
+Governmental job accounts for 18.81 %.
+
+Blue_Collar (Craft-repair,Farming-fishing,Handlers-cleaners,Machine-op-inspct,Transport-moving)
+
+White_Collar (Adm-clerical, Sales, Tech-support,Protective-serv), 
+
+Exec_mgr_prof (Exec-managerial,Prof-specialty), 
+
+and Service_other (Armed-Forces, Other-service, Priv-house-serv)
+
+```{r ,echo=FALSE}
+incomecensus$occupation <- incomecensus$occupation %>% 
+  fct_collapse(Blue_collar=c("Craft-repair","Farming-fishing","Handlers-cleaners","Machine-op-inspct","Transport-moving"),
+               White_collar=c("Adm-clerical","Sales","Tech-support","Protective-serv"),
+               Exec_mgr_prof=c("Exec-managerial","Prof-specialty"), 
+               Other_service =c("Armed-Forces", "Other-service", "Priv-house-serv"))
+```
+
+```{r,fig.height= 4, fig.width= 12}
+occupation_distr <- incomecensus %>%
+  group_by(occupation) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(desc(counts)) %>% 
+  ggplot(aes(x= reorder(occupation, counts),
+             y  = counts)) +
+  geom_bar(stat = "identity",
+           width = 0.6,
+           fill = "steelblue") +
+  geom_text(aes(label = paste0(round(counts,1),"\n","(",Percentage,"%)")), 
+            vjust = 0.4, hjust = -0.5,color = "darkblue", size = 4) +
+  scale_y_continuous(limits = c(0,20000)) +
+  theme_minimal() +
+  labs(x = "Grouped Occupation", y = "Frequency") + 
+  coord_flip()
+
+occupation_pct <- incomecensus %>% 
+  group_by(occupation, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(occupation, n), 
+             y = pct/100, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "Percentage", 
+                     labels = scales::percent) +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.text.y=element_blank()) + 
+  coord_flip()
+
+ggarrange(occupation_distr, occupation_pct, nrow = 1)
+```
+
+```{r relationship, echo=TRUE, eval=TRUE}
+incomecensus %>% 
+  ggplot(aes(income, color= income, fill= income)) +
+  geom_bar( alpha = 0.8, width = 0.8) +
+  facet_grid(~ relationship) + 
+  labs(x = "Incomes", y = "Count", title = "Incomes by relationship")
+```
+
+This column contains categories that might be overlap with other feature. 
+
+For example, unmarried people in the relationship attribute is the same as the unmarried level in the marital column.
+
+
+```{r,fig.height= 4, fig.width= 12}
+relationship_distr <- incomecensus %>%
+  group_by(relationship) %>%
+  summarise(counts = n()) %>% 
+  mutate(Percentage = round(counts*100/sum(counts),2)) %>% 
+  arrange(desc(counts)) %>% 
+  ggplot(aes(x= reorder(relationship, counts),
+             y  = counts)) +
+  geom_bar(stat = "identity",
+           width = 0.6,
+           fill = "steelblue") +
+  geom_text(aes(label = paste0(round(counts,1),"\n","(",Percentage,"%)")), 
+            vjust = 0.4, hjust = -0.5,color = "darkblue", size = 4) +
+  scale_y_continuous(limits = c(0,20000)) +
+  theme_minimal() +
+  labs(x = "Relationship", y = "Frequency") + 
+  coord_flip()
+
+relationship_pct <- incomecensus %>% 
+  group_by(relationship, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(relationship, n), 
+             y = pct/100, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "Percentage", 
+                     labels = scales::percent) +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.text.y=element_blank()) + 
+  coord_flip()
+
+ggarrange(relationship_distr, relationship_pct, nrow = 1)
+```
+
+This variable may be redundant as it collapse somehow with the feature marital_status.
+
+
+***race***
+
+```{r, fig.height = 4, fig.width= 7.5}
+incomecensus %>% 
+  ggplot(aes(race, fill= income)) +
+  geom_bar(position = "fill") +
+  labs(x = "Race", 
+       y = "Proportion", 
+       title = "Incomes by race")+
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  geom_hline(yintercept = 0.2489, col="blue") +
+  coord_flip()
+```
+Black and "Amer-Indio-Eskima" earn less than 50k more frequently than the general population. 
+
+However, the percent of whites and "Asian-Pac-Islander" that earn more than 50k is over the general population average.
+
+***Sex***
+Here we can see that the vast majority of people having an income greater than 50000 dollars are males.
+
+```{r}
+gender_prop <- incomecensus %>% 
+  group_by(sex) %>% 
+  summarise(count = n()) %>% 
+  ungroup()%>% 
+  arrange(desc(sex)) %>%
+  mutate(percentage = round(count/sum(count),4)*100,
+         lab.pos = cumsum(percentage)-0.5*percentage)
+
+gender_distr <- ggplot(data = gender_prop, 
+       aes(x = "", 
+           y = percentage, 
+           fill = sex))+
+  geom_bar(stat = "identity")+
+  coord_polar("y") +
+  geom_text(aes(y = lab.pos, 
+                label = paste(percentage,"%", sep = "")), col = "blue", size = 4) +
+  scale_fill_manual(values=c("orange", "lightblue"),
+                    name = "Gender") +
+  theme_void() +
+  theme(legend.title = element_text(color = "black", size = 12),
+        legend.text = element_text(color = "black", size = 12))
+
+
+gender_prop <- incomecensus %>% 
+  group_by(sex, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(sex, n), 
+             y = pct, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "black") +
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(color = "black", size = 12),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.title = element_text(color = "black", size = 12),
+        legend.text = element_text(color = "black", size = 12))
+
+ggarrange(gender_distr, gender_prop, nrow = 1)
+```
+Two-third of respondents are male. 
+
+The proportion of women that earn more than 50k is much lower than that of their male counterparts.
+
+***hour per week***
+
+Distribution of hours per week
+
+```{r}
+incomecensus %>% ggplot(aes(hours.per.week)) + 
+  geom_histogram(fill= "orange",
+                 color = 'blue',
+                 binwidth = 5) +   
+  labs(title= "Age Distribution") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r workw, echo=TRUE, eval=TRUE}
+incomecensus %>% 
+  group_by(income) %>%
+  summarise("Mean hours per week" = mean(hours.per.week),
+            "Standard deviatrion" = sd(hours.per.week))
+```
+
+Contrusting box-plot
+
+```{r, fig.height= 5, fig.width = 5}
+ggplot(data = incomecensus, 
+       aes(income, 
+           hours.per.week, 
+           fill = income))+
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) + 
+  geom_boxplot()+
+  labs(x = "Incomes", 
+       y = "Worked hours per week", 
+       title = "Incomes by working hours")
+```
+
+There are many outliers. 
+
+Some people work for 100 hours a week (which is possible)
+
+***native.country***
+
+Incomes by origin 
+
+There are 40 different  native countries and some of them have just a few cases, for instance, honduras have just 10 cases.
+
+Therefore, the first attempt is to group the countries by continent. 
+
+```{r}
+incomecensus <- incomecensus %>% 
+  mutate(native_continent = case_when(
+    native.country %in% c("France", "Greece", "Hungary", "Italy", "Portugal",
+                          "Scotland", "England", "Germany", "Holand-Netherlands",
+                          "Ireland", "Poland", "Yugoslavia") ~ "Europe",
+    native.country %in% c("Columbia", "Dominican-Republic", "El-Salvador", "Haiti",
+                          "Honduras", "Mexico", "Outlying-US(Guam-USVI-etc)",
+                          "Cuba", "Ecuador", "Guatemala", "Jamaica", "Nicaragua",
+                          "Peru", "Puerto-Rico", "Trinadad&Tobago") ~ "Latin America", # "Trinadad&Tobago" and "Outlying-US(Guam-USVI-etc" 
+    native.country %in% c("Iran", "Japan", "Philippines", "Taiwan", "Vietnam", "Cambodia",
+                          "China", "Hong", "India", "Laos", "South", "Thailand") ~ "Asia",
+    native.country %in% c("United-States","Canada") ~ "USA/Canada"))
+```
+
+
+```{r}
+incomecensus %>% 
+  group_by(native_continent) %>% 
+  count()
+```
+
+```{r, fig.width=6 , fig.height= 5}
+incomecensus %>% 
+  group_by(native_continent, income) %>% 
+  summarize(n = n()) %>% 
+  mutate(pct = n*100/sum(n)) %>% 
+  ggplot(aes(x = reorder(native_continent, n), 
+             y = pct, 
+             fill = income)) +
+  geom_bar(stat = "identity", width = 0.6) + 
+  scale_x_discrete(name = "") +
+  scale_fill_manual(values=c("#E3CD81FF", "#B1B3B3FF")) +
+  geom_text(aes(label = paste0(round(pct,0),"%")), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, 
+            color = "blue") +
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(color = "black", size = 12),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.title = element_text(color = "black", size = 12),
+        legend.text = element_text(color = "black", size = 12))
+```
+
+
+We will remove some columns
+
+```{r}
+incomecensus <- incomecensus %>% 
+  select(-c("education","capital.gain","capital.loss", "relationship", "native.country"))
+```
+
+
+
+The final data 
+
+
+```{r}
+str(incomecensus)
+```
+we need to convert two columns marital_status and native_continent in factor
+
+```{r}
+incomecensus$marital_status <- as.factor(incomecensus$marital_status)
+incomecensus$native_continent <- as.factor(incomecensus$native_continent)
+```
+
+we will save this data as income.csv
+
+
+
+```{r}
+write.csv(incomecensus,file = "income.csv", row.names= FALSE)
+```
+
+
+
+MODELLLING
+
+```{r}
+data <- read_csv("income.csv")
+```
+
+```{r}
+data <- data %>%
+  mutate_if(is.character,as.factor)
+
+str(data)
+```
+
+```{r}
+library(caret)
+```
+
+
+```{r}
+Trainindex <- createDataPartition(y = data$income , p = .70, list = FALSE)
+
+training <- data[Trainindex ,]
+
+validation <- data[-Trainindex,]
+
+training_new <- training[-8]
+
+validation_new <- validation[-8]
+
+income_training_label <- training$income
+
+income_validation_label <- validation$income
+```
+
+
+***LOGISTIC REGRESSION***
+package caret
+
+```{r}
+set.seed(123)
+default_glm_mod <- train(form = income ~ .,
+                         data = training,
+                         method = "glm",
+                         family = "binomial",
+                         tuneLength = 5)
+```
+
+```{r}
+glm_pred <- predict(default_glm_mod, newdata = validation)
+
+confusionMatrix(glm_pred, validation$income)
+```
+
+
+***II. Decision tree based methods***
+
+II.1 rpart
+
+Fully grown trees
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+
+
+```{r}
+rparttree <- rpart(income ~ ., 
+                   data = training,
+                   method = "class")
+```
+
+```{r}
+rparttree 
+```
+
+
+```{r, fig.height = 7.5, fig.width = 10}
+# Plot the trees
+rpart.plot(rparttree)
+```
+
+Marital status is the most important feature for this data set.
+
+```{r}
+plotcp(rparttree)
+```
+
+
+II.1. C5.0 with boosting
+
+```{r}
+library(C50)
+```
+
+```{r}
+set.seed(123)
+
+treeC5 <- C5.0(income ~ .,
+                data = training,
+                trials = 100)
+
+treeC5_Pred <- predict(treeC5, validation)
+
+confusionMatrix(treeC5_Pred, validation$income)
+```
+
+II.2 Randomm forest
+
+```{r}
+library(randomForest)
+```
+
+```{r}
+set.seed(123)
+treeRf <- randomForest(income ~ .,
+ data = training,
+ ntree = 500,
+ mtry = 3,
+ importance = TRUE)
+```
+
+```{r}
+treeRf_Pred <- predict(treeRf, validation)
+
+confusionMatrix(treeRf_Pred, validation$income)
+```
+
+***NAIVE BAYES***
+
+
+```{r}
+library(e1071)
+```
+
+```{r}
+set.seed(123)
+NB <- naiveBayes(income ~., data = training)
+# that one is faster than the package caret
+```
+
+
+```{r}
+NB_pred <- predict(NB, validation, type="class")
+confusionMatrix(NB_pred,validation$income)
+```
+
+***KNN***
+```{r}
+set.seed(3333)
+knn_fit <- train(income ~., 
+                 data = training, 
+                 method = "knn",
+                 preProcess = c("center", "scale"),tuneLength = 5)
+```
+
+
+```{r}
+knn_fit
+```
+
+```{r}
+KNN_pred <- predict(knn_fit, validation, type="raw")
+confusionMatrix(KNN_pred,validation$income)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
